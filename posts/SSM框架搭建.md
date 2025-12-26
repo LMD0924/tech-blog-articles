@@ -28,7 +28,7 @@ MyBatis本是 apache 的一个开源项目iBatis, 2010年这个项目由apache s
 
 ###  2） 所需Jar包
 
-![image-20251226134055685](E:\GitHub\tech-blog-articles\posts\SSM框架搭建.assets\image-20251226134055685.png)
+![image-20251226134055685](SSM框架搭建.assets/image-20251226134055685.png)
 
 ### 3）简单给大家介绍一下上述Jar包的作用
 
