@@ -4,7 +4,7 @@
 
 本次知识单元包含如下知识点和能力要求：
 
-![image-20251226133826297](SSM框架搭建.assets\image-20251226133826297.png)
+![image-20251226133826297](SSM框架搭建.assets/image-20251226133826297.png)
 
 SSM框架整合，顾名思义这SSM是三个框架的缩写（S：SpringMVC S:Spring M：Mybatis），之前我们都在前面的课程中学习了Web层的SpringMVC框架、Service层的Spring框架以及Dao层的Mybatis框架，但是我们都是分别去进行使用的，没有把他们整合到一起来使用。由于MyBatis框架和我们Spring系列框架不是一个公司的出品，所以我们需要在整合前下载一些整合需要用的Jar包。
 
