@@ -499,3 +499,1208 @@ CREATE TABLE test1(
 #字段c为计算列，是由字段a和b的值相加得来的
 ```
 
+### MySQL中的数据类型
+
+整数类型
+
+浮点类型：计算会出现精度不精确
+
+定点数类型：DECIMAL  底层利用字符串存储数据的，比较精确
+
+位类型：BIT
+
+日期时间类型
+
+文本字符串类型
+
+枚举类型：ENUM
+
+集合类型：SET
+
+二进制字符串类型：BINARY	VARBINARY	TINYBLOB	BLOB	MEDIUMBLOB	LONBLOB
+
+JSON类型
+
+空间数据类型
+
+### MySQL 中 ZEROFILL
+
+**ZEROFILL** 是 MySQL 中的一个字段属性，用于在**显示数值时**用前导零填充到指定宽度。
+
+```sql
+-- 创建测试表
+CREATE TABLE zerofill_demo (
+    num_normal INT(5),
+    num_zerofill INT(5) ZEROFILL,
+    price DECIMAL(6,2) ZEROFILL
+);
+
+-- 插入数据
+INSERT INTO zerofill_demo VALUES 
+(123, 123, 45.67),
+(1, 1, 1234.56),
+(99999, 99999, 0.5),
+(100000, 100000, 9999.99);  -- 超出宽度
+
+-- 查询数据
+SELECT * FROM zerofill_demo;
+```
+
+```tex
+num_normal | num_zerofill | price
+-----------|--------------|--------
+123        | 00123        | 045.67
+1          | 00001        | 1234.56
+99999      | 99999        | 0000.50
+100000     | 100000       | 9999.99  -- 超出宽度时正常显示
+```
+
+
+
+### 约束constraint
+
+#### 查看表中约束：
+
+```SQL
+SELECT * FROM informatio_schema.table_constraints
+WHERE table_name='表名';
+```
+
+#### 1.NOT NULL 	非空约束
+
+限制某个字段/某列的值不为null
+
+1.1在创建表时添加约束
+
+```SQL
+CREATE TABLE test1(
+	id int NOT NULL,
+    last_name varchar(25) NOT NULL,
+    email varchar(25),
+    salary DECIMAL(10,2)
+);
+```
+
+1.2在修改表时添加/删除约束
+
+```SQL
+#添加约束
+ALTER TABLE test1
+MODIFY email VARCHAR(25) NOT NULL;
+#删除约束
+ALTER TABLE test1
+MODIFY email VARCHAR(25) NULL;
+```
+
+### 2.unique 唯一性约束
+
+2.1在创建表时添加约束
+
+```sql
+CREATE TABLE test2(
+	id int UNIQUE,#列级约束
+    last_name varchar(25) UNIQUE,
+    email varchar(25) UNIQUE,
+    salary DECIMAL(10,2)
+    #表级约束  所有字段声明完，写在最后
+    CONSTRAINT uk_test2_email UNIQUE(email)
+);
+```
+
+2.2在修改表时添加约束
+
+```SQL
+#添加约束
+ALTER TABLE 表名
+ADD CONSTRAINT 约束名 UNIQUE (字段名);
+
+ALTER TABLE 表名
+MODIFY 字段名 类型 UNIQUE;
+```
+
+2.3删除唯一性约束
+
+添加唯一性约束的列上也会自动创建唯一索引
+
+删除唯一约束只能通过删除唯一索引的方式删除
+
+删除时需要指定唯一索引名，唯一索引名就和唯一约束名一样
+
+如果创建唯一约束时未指定名称，如果时单列，就默认和列名相同；如果时组合列，那么默认和（）中排在第一个的列名相同，也可以自定义名；
+
+```SQL
+ALTER TABLE 表名
+DROP INDEX 约束名;
+```
+
+#### 3.primary key 约束
+
+用来唯一标识表中的一行记录
+
+一个表只能添加一个主键约束
+
+MySQL的主键名总是PRIMARY,就算自己命名主键约束名也没用。
+
+**auto_increment自增列  **
+
+①一个表中最多有一个自增长列**
+
+②自增长列约束的列必须是键列（主键列，唯一键列）
+
+③自增约束的列的数据类型必须是整数类型
+
+⑤如果自增列指定了0和null，会在当前的最大值的基础上自增，如果手动指定了具体的值，直接赋值为具体值。
+
+#### 4.foreign key 外键约束
+
+```SQL
+#先创建主表
+CREATE TABLE 主表名(
+	id int primary key,
+    name varchar(15)
+);
+#创建从表
+CREATE TABLE 从表名(
+	id int primary key auto_increment,
+    name varchar(15),
+    主表名_id int,
+    CONSTRAINT 约束名 FOREIGN KEY (主表名_id) REFERENCES 主表名(id);
+);
+```
+
+#### 5.CHECK约束
+
+```SQL
+CREATE TABLE 表名(
+	id int primary key,
+    name varchar(15),
+    salary DECIMAL(10,2) CHECK(salary>2000)
+);
+```
+
+#### 6.DEFAULT默认值约束
+
+### 视图
+
+①.视图可以看做是一个虚拟表，本身不存储数据，视图的本质，就可以看做是存储起来的select语句
+
+②视图中select语句中涉及到的表称为基表
+
+③针对视图做DML操作，会影响到对应的基表数据
+
+④视图本身删除，不会导致基表中数据的删除
+
+#### 创建视图
+
+```SQL
+CREATE VIEW 视图名
+AS select * 
+from 表名;
+```
+
+#### 查看视图详细信息
+
+```SQL
+SHOW CREATE VIEW 视图名;
+```
+
+#### 修改视图
+
+方式1：
+
+```SQL
+CREATE OR REPLACE VIEW 视图名
+AS
+查询语句;
+```
+
+方式2：
+
+```SQL
+ALTER VIEW 视图名
+AS
+查询语句;
+```
+
+#### 删除视图
+
+```SQL
+DROP VIEW IF EXISTS 视图名;
+```
+
+
+
+### 存储过程和存储函数
+
+1.没有参数
+
+2.IN类型（有参无返）
+
+3.OUT类型（无参有返）
+
+4.IN和OUT（有参有返）
+
+5.INOUT（有参有返）
+
+#### 创建存储过程
+
+```sql
+CREATE PROCEDURE 存储过程名(IN|OUT|INOUT 参数名 参数类型)
+BEGIN
+存储过程体
+END;
+```
+
+```SQL
+DELINITER 结束标识符
+```
+
+#### 存储过程的调用
+
+```SQL
+CALL 存储过程名();
+```
+
+### 存储函数
+
+创建函数前执行此语句，保证函数的创建成功
+
+```SQL
+SET GLOBAL log_bin_trust_function_creators=1;
+```
+
+
+
+```SQL
+CREATE FUNCTION 函数名(参数名 参数类型)
+RETURNS 返回值类型
+BEGIN
+ 函数体 #函数体中肯定有return语句
+ END;
+```
+
+#### 调用存储函数
+
+```SQL
+SELECT 函数名(参数列表);
+```
+
+
+
+### 变量，流程控制与游标
+
+#### 变量
+
+在MySQL中，变量分为系统变量和用户自定义变量
+
+系统变量：全局系统变量，会话系统变量
+
+#### 查看系统变量
+
+```SQL
+#查询全局系统变量
+SHOW GLOBAL VARIABLES;
+#查询会话系统变量
+SHOW SESSION VARIABLES;
+#或
+SHOW VARIABLES;#默认查询的是会话系统变量
+```
+
+查询部分系统变量
+
+```SQL
+SHOW GLOBAL|SESSION VARIABLES LIKE '%标识符%';
+```
+
+两个@表示系统变量，一个@表示用户自定义变量
+
+#### 用户变量
+
+用户变量：会话用户变量，局部用户变量
+
+会话用户变量：使用@开头，作用域为当前会话
+
+局部变量：只能使用在存储过程和存储函数中
+
+##### 会话用户变量的声明和赋值
+
+```SQL
+#方式1：
+SET @用户变量=值;
+SET @用户变量:=值；
+#方式2：
+SELECT @用户变量:=表达式;
+SELECT 表达式 INTO @用户变量;
+```
+
+##### 使用
+
+```SQL
+SELECT @变量名;
+```
+
+##### 局部变量
+
+①使用DECLARE声明
+
+②声明并使用在BEGIN……END中（使用在存储过程，存储函数中）
+
+③DECLARE的方式声明的局部变量必须声明在BEGIN中的首行位置
+
+举例
+
+```SQL
+DELIMITER //
+CREATE PROCEDURE test_var()
+BEGIN
+  		#声明局部变量
+  		DECLARE a INT DEFAULT 0;
+  		DECLARE b INT;
+  		DECLARE emp_name VARCHAR(25);
+  		#赋值
+  		SET a =1;
+  		set b:=2;
+  		SELECT last_name into emp_name from employees where employee_id =101;
+  		#使用
+  		select a,b,emp_name;
+  END //
+  DELIMITER;
+```
+
+
+
+### 流程控制
+
+顺序结构，分支结构，循环结构
+
+#### 分支结构
+
+IF
+
+```SQL
+IF 表达式1 THEN 操作1
+ELSEIF 表达式2 THEN 操作2
+ELSE 操作N
+END IF
+```
+
+### 形式1：简单 CASE 表达式
+
+```sql
+CASE case_value
+    WHEN when_value1 THEN result1
+    WHEN when_value2 THEN result2
+    ...
+    [ELSE else_result]
+END
+```
+
+### **形式2：搜索 CASE 表达式**
+
+```sql
+CASE
+    WHEN condition1 THEN result1
+    WHEN condition2 THEN result2
+    ...
+    [ELSE else_result]
+END
+```
+
+## 🔄 **1. WHILE 循环**
+
+### **基本语法**
+```sql
+[label:] WHILE search_condition DO
+    statement_list
+END WHILE [label]
+```
+
+### **完整结构**
+```sql
+[label_name:] WHILE condition DO
+    -- 循环体语句
+    statement1;
+    statement2;
+    ...
+    
+    -- 控制语句
+    ITERATE label_name;  -- 相当于 continue
+    LEAVE label_name;    -- 相当于 break
+END WHILE label_name;
+```
+
+## 🔁 **2. REPEAT 循环**
+
+### **基本语法**
+```sql
+[label:] REPEAT
+    statement_list
+UNTIL search_condition
+END REPEAT [label]
+```
+
+### **完整结构**
+```sql
+[label_name:] REPEAT
+    -- 循环体语句
+    statement1;
+    statement2;
+    ...
+    
+    -- 控制语句
+    ITERATE label_name;
+    LEAVE label_name;
+UNTIL condition  -- 条件为真时结束循环
+END REPEAT label_name;
+```
+
+## 🔂 **3. LOOP 循环**
+
+### **基本语法**
+```sql
+[label:] LOOP
+    statement_list
+END LOOP [label]
+```
+
+### **完整结构**
+```sql
+[label_name:] LOOP
+    -- 循环体语句
+    statement1;
+    statement2;
+    ...
+    
+    -- 必须使用LEAVE退出，否则无限循环
+    IF condition THEN
+        LEAVE label_name;
+    END IF;
+    
+    -- 控制语句
+    ITERATE label_name;#ITERATE = 跳过本次循环的剩余代码，直接开始下一次循环
+END LOOP label_name;
+```
+
+## 📝 **4. 在存储过程中的完整示例结构**
+
+### **存储过程内使用循环**
+```sql
+DELIMITER $$
+
+CREATE PROCEDURE procedure_name()
+BEGIN
+    -- 变量声明
+    DECLARE var_name INT DEFAULT 0;
+    
+    -- WHILE循环示例
+    WHILE var_name < 10 DO
+        -- 循环体
+        SET var_name = var_name + 1;
+    END WHILE;
+    
+    -- REPEAT循环示例
+    REPEAT
+        SET var_name = var_name - 1;
+    UNTIL var_name <= 0
+    END REPEAT;
+    
+    -- LOOP循环示例
+    my_loop: LOOP
+        SET var_name = var_name + 1;
+        
+        IF var_name >= 5 THEN
+            LEAVE my_loop;
+        END IF;
+        
+        IF var_name = 3 THEN
+            ITERATE my_loop;
+        END IF;
+    END LOOP my_loop;
+END$$
+
+DELIMITER ;
+```
+
+## 🎯 **5. 标签和流程控制语句**
+
+### **标签语法**
+```sql
+-- 循环标签
+label_name: LOOP
+    -- ...
+END LOOP label_name;
+
+-- 标签用于ITERATE和LEAVE
+ITERATE label_name;  -- 跳转到标签处继续下一次循环
+LEAVE label_name;    -- 跳出标签标识的循环或代码块
+```
+
+### **流程控制组合**
+```sql
+[label_name:] WHILE condition DO
+    -- ...
+    
+    IF condition1 THEN
+        ITERATE label_name;  -- 继续下次循环
+    END IF;
+    
+    IF condition2 THEN
+        LEAVE label_name;    -- 退出循环
+    END IF;
+END WHILE label_name;
+```
+
+## 💡 **6. 嵌套循环结构**
+
+```sql
+outer_loop: WHILE outer_condition DO
+    -- 外层循环体
+    
+    inner_loop: WHILE inner_condition DO
+        -- 内层循环体
+        
+        IF some_condition THEN
+            LEAVE outer_loop;  -- 直接退出外层循环
+        END IF;
+        
+        IF another_condition THEN
+            ITERATE inner_loop;  -- 继续内层下次循环
+        END IF;
+    END WHILE inner_loop;
+    
+END WHILE outer_loop;
+```
+
+**LEAVE = 退出整个循环（相当于 break）**
+**ITERATE = 跳过本次循环，继续下一次（相当于 continue）**
+
+# MySQL 游标（Cursor）详解
+
+## 📌 **什么是游标？**
+
+**游标**是**数据库查询结果集的一个指针**，可以逐行遍历结果集。
+
+## 🎯 **一句话理解**
+> **"游标就是数据库里的迭代器，让你能一行一行地处理查询结果"**
+
+## 🔄 **游标使用步骤（固定流程）**
+
+```sql
+-- 1. 声明游标
+DECLARE cursor_name CURSOR FOR select_statement;
+
+-- 2. 打开游标
+OPEN cursor_name;
+
+-- 3. 获取数据（循环）
+FETCH cursor_name INTO variables;
+
+-- 4. 处理数据
+-- ... 业务逻辑 ...
+
+-- 5. 关闭游标
+CLOSE cursor_name;
+```
+
+## 📊 **完整的游标语法结构**
+
+```sql
+DELIMITER $$
+
+CREATE PROCEDURE cursor_demo()
+BEGIN
+    -- ============ 第1步：声明变量 ============
+    DECLARE done INT DEFAULT 0;          -- 结束标志
+    DECLARE var1 INT;                    -- 接收字段1
+    DECLARE var2 VARCHAR(50);            -- 接收字段2
+    DECLARE var3 DECIMAL(10,2);          -- 接收字段3
+    
+    -- ============ 第2步：声明游标 ============
+    DECLARE cursor_name CURSOR FOR 
+        SELECT column1, column2, column3 
+        FROM table_name 
+        WHERE condition 
+        ORDER BY column1;
+    
+    -- ============ 第3步：声明处理程序 ============
+    -- 当没有更多行时，设置 done = 1
+    DECLARE CONTINUE HANDLER FOR NOT FOUND 
+        SET done = 1;
+    
+    -- ============ 第4步：打开游标 ============
+    OPEN cursor_name;
+    
+    -- ============ 第5步：循环获取数据 ============
+    read_loop: LOOP
+        -- 获取一行数据到变量
+        FETCH cursor_name INTO var1, var2, var3;
+        
+        -- 检查是否还有数据
+        IF done = 1 THEN
+            LEAVE read_loop;
+        END IF;
+        
+        -- ============ 第6步：处理数据 ============
+        -- 这里写你的业务逻辑
+        -- 例如：插入到另一张表、计算、更新等
+        
+    END LOOP read_loop;
+    
+    -- ============ 第7步：关闭游标 ============
+    CLOSE cursor_name;
+    
+END$$
+
+DELIMITER ;
+```
+
+## 💡 **实际示例**
+
+### **示例1：基本的游标使用**
+```sql
+DELIMITER $$
+
+CREATE PROCEDURE basic_cursor_example()
+BEGIN
+    DECLARE v_id INT;
+    DECLARE v_name VARCHAR(50);
+    DECLARE v_salary DECIMAL(10,2);
+    DECLARE done INT DEFAULT 0;
+    
+    -- 1. 声明游标
+    DECLARE emp_cursor CURSOR FOR 
+        SELECT employee_id, employee_name, salary 
+        FROM employees 
+        WHERE department_id = 1;
+    
+    -- 2. 声明处理程序
+    DECLARE CONTINUE HANDLER FOR NOT FOUND 
+        SET done = 1;
+    
+    -- 3. 打开游标
+    OPEN emp_cursor;
+    
+    -- 4. 创建临时表存储结果
+    DROP TEMPORARY TABLE IF EXISTS temp_results;
+    CREATE TEMPORARY TABLE temp_results (
+        emp_id INT,
+        emp_name VARCHAR(50),
+        emp_salary DECIMAL(10,2),
+        bonus DECIMAL(10,2)
+    );
+    
+    -- 5. 循环处理
+    read_loop: LOOP
+        FETCH emp_cursor INTO v_id, v_name, v_salary;
+        
+        IF done = 1 THEN
+            LEAVE read_loop;
+        END IF;
+        
+        -- 业务逻辑：计算奖金（工资的10%）
+        INSERT INTO temp_results 
+        VALUES (v_id, v_name, v_salary, v_salary * 0.1);
+        
+    END LOOP read_loop;
+    
+    -- 6. 关闭游标
+    CLOSE emp_cursor;
+    
+    -- 7. 返回结果
+    SELECT * FROM temp_results;
+    
+    -- 8. 清理临时表（可选）
+    DROP TEMPORARY TABLE temp_results;
+END$$
+
+DELIMITER ;
+```
+
+### **示例2：带参数的游标**
+```sql
+DELIMITER $$
+
+CREATE PROCEDURE cursor_with_parameter(
+    IN dept_id INT,
+    IN min_salary DECIMAL(10,2)
+)
+BEGIN
+    DECLARE v_emp_id INT;
+    DECLARE v_emp_name VARCHAR(100);
+    DECLARE v_salary DECIMAL(10,2);
+    DECLARE v_count INT DEFAULT 0;
+    DECLARE v_total_salary DECIMAL(10,2) DEFAULT 0;
+    DECLARE done INT DEFAULT 0;
+    
+    -- 声明带参数的游标
+    DECLARE emp_cursor CURSOR FOR 
+        SELECT employee_id, employee_name, salary
+        FROM employees
+        WHERE department_id = dept_id
+          AND salary >= min_salary
+        ORDER BY salary DESC;
+    
+    DECLARE CONTINUE HANDLER FOR NOT FOUND 
+        SET done = 1;
+    
+    OPEN emp_cursor;
+    
+    -- 输出表头
+    SELECT '员工ID', '姓名', '工资' 
+    UNION ALL
+    
+    read_loop: LOOP
+        FETCH emp_cursor INTO v_emp_id, v_emp_name, v_salary;
+        
+        IF done = 1 THEN
+            LEAVE read_loop;
+        END IF;
+        
+        -- 输出每一行
+        SELECT v_emp_id, v_emp_name, v_salary;
+        
+        -- 统计
+        SET v_count = v_count + 1;
+        SET v_total_salary = v_total_salary + v_salary;
+        
+    END LOOP read_loop;
+    
+    CLOSE emp_cursor;
+    
+    -- 输出统计信息
+    SELECT 
+        CONCAT('符合条件的员工数: ', v_count) AS summary,
+        CONCAT('总工资: ', FORMAT(v_total_salary, 2)) AS total_salary,
+        CONCAT('平均工资: ', FORMAT(v_total_salary / NULLIF(v_count, 0), 2)) AS avg_salary;
+END$$
+
+DELIMITER ;
+```
+
+### **示例3：嵌套游标（游标中的游标）**
+```sql
+DELIMITER $$
+
+CREATE PROCEDURE nested_cursors()
+BEGIN
+    DECLARE v_dept_id INT;
+    DECLARE v_dept_name VARCHAR(50);
+    DECLARE v_emp_id INT;
+    DECLARE v_emp_name VARCHAR(50);
+    DECLARE done1 INT DEFAULT 0;
+    DECLARE done2 INT DEFAULT 0;
+    
+    -- 外层游标：遍历部门
+    DECLARE dept_cursor CURSOR FOR 
+        SELECT department_id, department_name 
+        FROM departments 
+        ORDER BY department_id;
+    
+    DECLARE CONTINUE HANDLER FOR NOT FOUND 
+        SET done1 = 1;
+    
+    OPEN dept_cursor;
+    
+    dept_loop: LOOP
+        FETCH dept_cursor INTO v_dept_id, v_dept_name;
+        
+        IF done1 = 1 THEN
+            LEAVE dept_loop;
+        END IF;
+        
+        -- 输出部门信息
+        SELECT CONCAT('=== 部门: ', v_dept_name, ' (ID: ', v_dept_id, ') ===') AS department_info;
+        
+        -- 重置内层游标的状态
+        SET done2 = 0;
+        
+        -- 内层游标：遍历该部门的员工
+        BEGIN
+            DECLARE emp_cursor CURSOR FOR 
+                SELECT employee_id, employee_name
+                FROM employees
+                WHERE department_id = v_dept_id
+                ORDER BY employee_name;
+            
+            DECLARE CONTINUE HANDLER FOR NOT FOUND 
+                SET done2 = 1;
+            
+            OPEN emp_cursor;
+            
+            emp_loop: LOOP
+                FETCH emp_cursor INTO v_emp_id, v_emp_name;
+                
+                IF done2 = 1 THEN
+                    LEAVE emp_loop;
+                END IF;
+                
+                -- 输出员工信息
+                SELECT CONCAT('  - 员工: ', v_emp_name, ' (ID: ', v_emp_id, ')') AS employee_info;
+                
+            END LOOP emp_loop;
+            
+            CLOSE emp_cursor;
+        END;
+        
+    END LOOP dept_loop;
+    
+    CLOSE dept_cursor;
+END$$
+
+DELIMITER ;
+```
+
+## 🚀 **高级游标技巧**
+
+### **可滚动游标（MySQL 8.0+）**
+```sql
+DELIMITER $$
+
+CREATE PROCEDURE scrollable_cursor()
+BEGIN
+    DECLARE v_id INT;
+    DECLARE v_name VARCHAR(50);
+    DECLARE done INT DEFAULT 0;
+    
+    -- 创建可滚动游标（需要MySQL 8.0+）
+    -- 实际上MySQL存储过程中的游标默认是只向前的
+    -- 但可以在应用程序中使用可滚动结果集
+    
+    -- 对于存储过程，通常这样模拟：
+    DROP TEMPORARY TABLE IF EXISTS temp_cursor_data;
+    
+    -- 先把数据存到临时表
+    CREATE TEMPORARY TABLE temp_cursor_data (
+        row_num INT AUTO_INCREMENT PRIMARY KEY,
+        id INT,
+        name VARCHAR(50)
+    );
+    
+    INSERT INTO temp_cursor_data (id, name)
+    SELECT id, name FROM users ORDER BY id;
+    
+    -- 然后对临时表使用游标
+    DECLARE cur CURSOR FOR 
+        SELECT id, name FROM temp_cursor_data ORDER BY row_num;
+    
+    DECLARE CONTINUE HANDLER FOR NOT FOUND 
+        SET done = 1;
+    
+    OPEN cur;
+    
+    -- 向前遍历
+    SELECT '=== 向前遍历 ===';
+    WHILE done = 0 DO
+        FETCH cur INTO v_id, v_name;
+        IF done = 0 THEN
+            SELECT CONCAT('行: id=', v_id, ', name=', v_name);
+        END IF;
+    END WHILE;
+    
+    -- 注意：MySQL存储过程游标不能向后移动
+    -- 如果需要双向移动，需要在应用程序中使用JDBC的可滚动结果集
+    
+    CLOSE cur;
+    
+    DROP TEMPORARY TABLE temp_cursor_data;
+END$$
+
+DELIMITER ;
+```
+
+### **带更新/删除的游标**
+```sql
+DELIMITER $$
+
+CREATE PROCEDURE cursor_for_update()
+BEGIN
+    DECLARE v_order_id INT;
+    DECLARE v_order_amount DECIMAL(10,2);
+    DECLARE v_customer_id INT;
+    DECLARE done INT DEFAULT 0;
+    
+    -- 使用 FOR UPDATE 锁定选中的行
+    DECLARE order_cursor CURSOR FOR 
+        SELECT order_id, amount, customer_id
+        FROM orders
+        WHERE status = 'PENDING'
+          AND order_date < DATE_SUB(NOW(), INTERVAL 7 DAY)
+        FOR UPDATE;  -- 锁定这些行，防止其他会话修改
+    
+    DECLARE CONTINUE HANDLER FOR NOT FOUND 
+        SET done = 1;
+    
+    START TRANSACTION;
+    
+    OPEN order_cursor;
+    
+    process_loop: LOOP
+        FETCH order_cursor INTO v_order_id, v_order_amount, v_customer_id;
+        
+        IF done = 1 THEN
+            LEAVE process_loop;
+        END IF;
+        
+        -- 自动取消过期订单
+        UPDATE orders 
+        SET status = 'CANCELLED', 
+            cancelled_at = NOW(),
+            cancel_reason = '超时未支付'
+        WHERE order_id = v_order_id;
+        
+        -- 记录取消日志
+        INSERT INTO order_cancel_logs 
+            (order_id, customer_id, amount, cancel_time, reason)
+        VALUES 
+            (v_order_id, v_customer_id, v_order_amount, NOW(), '超时未支付');
+        
+        -- 可选：发送通知或退款逻辑
+        
+        SELECT CONCAT('已取消订单: ', v_order_id) AS message;
+        
+    END LOOP process_loop;
+    
+    CLOSE order_cursor;
+    
+    COMMIT;
+END$$
+
+DELIMITER ;
+```
+
+## 📝 **游标的最佳实践**
+
+### **错误处理模板**
+```sql
+DELIMITER $$
+
+CREATE PROCEDURE safe_cursor_template()
+BEGIN
+    DECLARE v_exit_handler INT DEFAULT 0;
+    DECLARE v_error_msg VARCHAR(500);
+    
+    -- 主变量
+    DECLARE v_id INT;
+    DECLARE v_name VARCHAR(50);
+    DECLARE done INT DEFAULT 0;
+    
+    -- 声明游标
+    DECLARE cur CURSOR FOR 
+        SELECT id, name FROM source_table;
+    
+    -- 错误处理：捕获所有异常
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        GET DIAGNOSTICS CONDITION 1
+            v_error_msg = MESSAGE_TEXT;
+        
+        -- 关闭游标（如果打开了）
+        IF v_exit_handler = 0 THEN
+            CLOSE cur;
+        END IF;
+        
+        -- 回滚事务（如果开始了）
+        ROLLBACK;
+        
+        -- 记录错误
+        INSERT INTO error_logs (error_message, error_time)
+        VALUES (v_error_msg, NOW());
+        
+        -- 返回错误信息
+        SELECT CONCAT('处理失败: ', v_error_msg) AS result;
+    END;
+    
+    -- 正常处理：没有更多数据
+    DECLARE CONTINUE HANDLER FOR NOT FOUND 
+        SET done = 1;
+    
+    START TRANSACTION;
+    
+    OPEN cur;
+    SET v_exit_handler = 1;  -- 标记游标已打开
+    
+    process_loop: LOOP
+        FETCH cur INTO v_id, v_name;
+        
+        IF done = 1 THEN
+            LEAVE process_loop;
+        END IF;
+        
+        -- 业务逻辑
+        -- 这里处理每一行数据
+        
+    END LOOP process_loop;
+    
+    CLOSE cur;
+    SET v_exit_handler = 0;  -- 标记游标已关闭
+    
+    COMMIT;
+    
+    SELECT '处理完成' AS result;
+    
+END$$
+
+DELIMITER ;
+```
+
+### **性能优化技巧**
+```sql
+DELIMITER $$
+
+CREATE PROCEDURE optimized_cursor()
+BEGIN
+    DECLARE v_batch_size INT DEFAULT 1000;
+    DECLARE v_processed INT DEFAULT 0;
+    DECLARE v_total INT DEFAULT 0;
+    DECLARE done INT DEFAULT 0;
+    
+    -- 1. 先获取总行数
+    SELECT COUNT(*) INTO v_total FROM large_table;
+    SELECT CONCAT('总记录数: ', v_total) AS info;
+    
+    -- 2. 分批处理（避免内存问题）
+    DROP TEMPORARY TABLE IF EXISTS temp_batch;
+    CREATE TEMPORARY TABLE temp_batch (
+        batch_id INT AUTO_INCREMENT PRIMARY KEY,
+        record_id INT
+    );
+    
+    -- 3. 只存储ID，减少内存占用
+    INSERT INTO temp_batch (record_id)
+    SELECT id FROM large_table ORDER BY id;
+    
+    -- 4. 使用游标处理批次
+    DECLARE batch_cursor CURSOR FOR 
+        SELECT record_id FROM temp_batch ORDER BY batch_id;
+    
+    DECLARE CONTINUE HANDLER FOR NOT FOUND 
+        SET done = 1;
+    
+    OPEN batch_cursor;
+    
+    batch_loop: LOOP
+        FETCH batch_cursor INTO @current_id;
+        
+        IF done = 1 THEN
+            LEAVE batch_loop;
+        END IF;
+        
+        -- 处理单条记录（通过ID获取完整数据）
+        CALL process_single_record(@current_id);
+        
+        SET v_processed = v_processed + 1;
+        
+        -- 显示进度
+        IF v_processed % v_batch_size = 0 THEN
+            SELECT CONCAT(
+                '进度: ', v_processed, '/', v_total, ' (',
+                ROUND(v_processed / v_total * 100, 2), '%)'
+            ) AS progress;
+        END IF;
+        
+    END LOOP batch_loop;
+    
+    CLOSE batch_cursor;
+    
+    SELECT CONCAT('处理完成，共处理 ', v_processed, ' 条记录') AS result;
+    
+    DROP TEMPORARY TABLE temp_batch;
+END$$
+
+DELIMITER ;
+```
+
+## ⚠️ **游标的限制和注意事项**
+
+### **限制**
+```sql
+-- 1. 游标是只向前的（FORWARD_ONLY）
+--    不能向后移动，不能随机访问
+
+-- 2. 游标是只读的（READ_ONLY）
+--    不能通过游标直接更新数据（需要用UPDATE语句）
+
+-- 3. 敏感度
+--    ASENSITIVE: 可能反映其他会话的更改（默认）
+--    INSENSITIVE: 不反映其他会话的更改（创建临时副本）
+
+-- 4. 声明顺序（重要！）
+DECLARE var1 INT;                    -- 变量声明
+DECLARE cur CURSOR FOR SELECT ...;   -- 然后游标声明
+DECLARE CONTINUE HANDLER ...;        -- 最后处理程序声明
+-- 顺序错会导致语法错误！
+
+-- 5. 作用域
+--    游标在声明的BEGIN...END块内有效
+```
+
+### **常见错误**
+```sql
+-- ❌ 错误1：处理程序声明在游标之前
+DECLARE CONTINUE HANDLER FOR NOT FOUND ...;  -- 错！
+DECLARE cur CURSOR FOR SELECT ...;           -- 应该在游标之后
+
+-- ✅ 正确顺序：
+DECLARE cur CURSOR FOR SELECT ...;
+DECLARE CONTINUE HANDLER FOR NOT FOUND ...;
+
+-- ❌ 错误2：重复打开已打开的游标
+OPEN cur;
+OPEN cur;  -- 错误！需要先关闭
+
+-- ✅ 正确：
+OPEN cur;
+-- 使用游标...
+CLOSE cur;
+-- 需要时重新打开
+OPEN cur;
+
+-- ❌ 错误3：忘记检查结束条件（无限循环）
+LOOP
+    FETCH cur INTO var;  -- 没有检查NOT FOUND
+    -- 处理数据...
+END LOOP;
+
+-- ✅ 正确：
+LOOP
+    FETCH cur INTO var;
+    IF done THEN LEAVE; END IF;
+    -- 处理数据...
+END LOOP;
+```
+
+## 🎯 **游标 vs 普通查询**
+
+| 场景             | 使用游标       | 使用普通查询 |
+| ---------------- | -------------- | ------------ |
+| **逐行处理**     | ✅ 适合         | ❌ 不适合     |
+| **复杂业务逻辑** | ✅ 适合         | ❌ 不适合     |
+| **大数据量**     | ❌ 不适合（慢） | ✅ 适合       |
+| **简单统计**     | ❌ 不适合       | ✅ 适合       |
+| **需要事务控制** | ✅ 适合         | ✅ 适合       |
+| **性能要求高**   | ❌ 不适合       | ✅ 适合       |
+
+## 💎 **总结**
+
+### **什么时候用游标？**
+1. **需要逐行处理**：每行数据需要不同的业务逻辑
+2. **复杂计算**：需要基于前一行结果计算下一行
+3. **数据转换**：需要把数据从一种格式转换成另一种
+4. **级联操作**：处理一行数据需要触发多个操作
+
+### **什么时候不用游标？**
+1. **简单查询**：直接用 SELECT
+2. **批量更新**：用 UPDATE ... WHERE
+3. **数据统计**：用 GROUP BY + 聚合函数
+4. **性能敏感**：游标通常比集合操作慢
+
+### **游标使用口诀**
+```
+一声明变量，二声明游标
+三声明处理，四打开它
+循环取数据，记得查结束
+处理完关闭，错误要捕获
+```
+
+**记住**：游标是强大的工具，但应该谨慎使用。在大多数情况下，集合操作（SQL语句）比游标更高效！
+
