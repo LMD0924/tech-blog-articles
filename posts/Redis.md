@@ -3059,3 +3059,82 @@ public class ComprehensiveCacheBreakdownSolution {
 
 **关键点**：缓存击穿的重点不是防止缓存失效，而是**防止大量并发请求在缓存失效时同时访问数据库**。通过合理的锁策略和异步更新机制，可以显著降低对数据库的冲击。
 
+# 全局ID生成器
+
+全局ID生成器，是一种在分布式系统下用来生成全局唯一ID的工具，一般要满足：唯一性，高可用，递增性，安全性，高性能。
+
+**ID的组成部分：**
+
+- 符号位：1bit，永远为0
+- 时间戳：31bit，以秒为单位
+- 序列号：32bit，秒内的计数器，支持每秒产生2^32个不同ID
+
+```JAVA
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.stereotype.Component;
+
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+
+@Component
+public class RedisIdWorker {
+    /**
+     * 开始时间戳 (2022-01-01 00:00:00)
+     */
+    private static final long BEGIN_TIMESTAMP = 1640995200L;
+    
+    /**
+     * 序列号的位数
+     */
+    private static final int COUNT_BITS = 32;
+    
+    @Autowired
+    private StringRedisTemplate stringRedisTemplate;
+
+    /**
+     * 生成下一个ID
+     * @param keyPrefix 业务前缀
+     * @return 生成的唯一ID
+     */
+    public long nextId(String keyPrefix) {
+        // 1. 生成时间戳
+        LocalDateTime now = LocalDateTime.now();
+        long nowSecond = now.toEpochSecond(ZoneOffset.UTC);
+        long timestamp = nowSecond - BEGIN_TIMESTAMP;
+        
+        // 2. 生成序列号
+        // 获取当前日期，精确到天
+        String date = now.format(DateTimeFormatter.ofPattern("yyyy:MM:dd"));
+        // 自增长，设置过期时间避免Redis中key无限增长
+        Long count = stringRedisTemplate.opsForValue().increment("icr:" + keyPrefix + ":" + date);
+        
+        // 如果是当天的第一个ID，设置过期时间（24小时后过期）
+        if (count != null && count == 1) {
+            // 设置24小时后过期
+            stringRedisTemplate.expire("icr:" + keyPrefix + ":" + date, java.time.Duration.ofDays(1));
+        }
+        
+        // 3. 拼接并返回
+        return timestamp << COUNT_BITS | (count != null ? count : 0);
+    }
+    
+    /**
+     * 测试主方法
+     */
+    public static void main(String[] args) {
+        // 测试时间戳计算
+        LocalDateTime beginTime = LocalDateTime.of(2022, 1, 1, 0, 0, 0);
+        long beginTimestamp = beginTime.toEpochSecond(ZoneOffset.UTC);
+        System.out.println("开始时间戳: " + beginTimestamp);
+        
+        // 测试ID生成逻辑（需要Redis环境）
+        // RedisIdWorker worker = new RedisIdWorker();
+        // for (int i = 0; i < 10; i++) {
+        //     System.out.println("生成的ID: " + worker.nextId("order"));
+        // }
+    }
+}
+```
+

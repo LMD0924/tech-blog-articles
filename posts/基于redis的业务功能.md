@@ -1060,3 +1060,693 @@ public class SmsLogService {
 3. **黑白名单**：特定手机号/IP的特殊处理
 4. **异步发送**：使用消息队列提高吞吐量
 5. **多通道发送**：短信+邮件+APP推送
+
+# 优惠券秒杀
+
+## 1. 核心表结构设计
+
+### 1.1 优惠券基础表 `coupon_base`
+
+sql
+
+```sql
+CREATE TABLE `coupon_base` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '优惠券ID',
+  `code` varchar(50) NOT NULL COMMENT '优惠券编码（唯一）',
+  `name` varchar(100) NOT NULL COMMENT '优惠券名称',
+  `type` tinyint(4) NOT NULL DEFAULT 1 COMMENT '优惠券类型：1-普通券，2-秒杀券',
+  `description` text COMMENT '优惠券描述',
+  `discount_type` tinyint(4) NOT NULL DEFAULT 1 COMMENT '折扣类型：1-满减，2-折扣，3-固定金额',
+  `discount_value` decimal(10,2) NOT NULL COMMENT '折扣值（根据类型不同含义不同）',
+  `min_amount` decimal(10,2) DEFAULT 0.00 COMMENT '最低消费金额',
+  `max_discount_amount` decimal(10,2) DEFAULT NULL COMMENT '最大折扣金额',
+  `total_quantity` int(11) NOT NULL DEFAULT 0 COMMENT '发行总量',
+  `remaining_quantity` int(11) NOT NULL DEFAULT 0 COMMENT '剩余数量',
+  `per_user_limit` int(11) DEFAULT 1 COMMENT '每人限领张数',
+  `validity_type` tinyint(4) NOT NULL DEFAULT 1 COMMENT '有效期类型：1-固定时间段，2-领取后N天有效',
+  `start_time` datetime DEFAULT NULL COMMENT '有效期开始时间',
+  `end_time` datetime DEFAULT NULL COMMENT '有效期结束时间',
+  `valid_days` int(11) DEFAULT NULL COMMENT '领取后有效天数',
+  `status` tinyint(4) NOT NULL DEFAULT 1 COMMENT '状态：1-待发布，2-已发布，3-已下架，4-已过期',
+  `apply_scope` tinyint(4) DEFAULT 1 COMMENT '适用范围：1-全场通用，2-指定分类，3-指定商品',
+  `seckill_info` json DEFAULT NULL COMMENT '秒杀专用信息（仅type=2时使用）',
+  `creator_id` bigint(20) DEFAULT NULL COMMENT '创建人ID',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_code` (`code`),
+  KEY `idx_type_status` (`type`,`status`),
+  KEY `idx_start_end_time` (`start_time`,`end_time`),
+  KEY `idx_creator` (`creator_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='优惠券基础信息表';
+```
+
+
+
+### 1.2 秒杀专用信息表 `coupon_seckill`（可选，也可以使用JSON字段）
+
+sql
+
+```sql
+CREATE TABLE `coupon_seckill` (
+  `coupon_id` bigint(20) NOT NULL COMMENT '优惠券ID',
+  `seckill_start_time` datetime NOT NULL COMMENT '秒杀开始时间',
+  `seckill_end_time` datetime NOT NULL COMMENT '秒杀结束时间',
+  `seckill_price` decimal(10,2) DEFAULT NULL COMMENT '秒杀价（如果优惠券本身是商品）',
+  `preheat_time` datetime DEFAULT NULL COMMENT '预热开始时间',
+  `purchase_limit` int(11) DEFAULT 1 COMMENT '限购数量',
+  `flash_sale_strategy` tinyint(4) DEFAULT 1 COMMENT '秒杀策略：1-定时上架，2-阶梯秒杀，3-随机秒杀',
+  `stock_sync_method` tinyint(4) DEFAULT 1 COMMENT '库存同步方式：1-实时，2-预热',
+  `virtual_stock` int(11) DEFAULT 0 COMMENT '虚拟库存（用于超卖控制）',
+  `actual_sold` int(11) DEFAULT 0 COMMENT '实际已售数量',
+  `seckill_status` tinyint(4) DEFAULT 1 COMMENT '秒杀状态：1-未开始，2-进行中，3-已结束，4-已取消',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`coupon_id`),
+  KEY `idx_seckill_time` (`seckill_start_time`,`seckill_end_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='秒杀优惠券专用信息表';
+```
+
+
+
+### 1.3 用户领取记录表 `coupon_user`
+
+sql
+
+```sql
+CREATE TABLE `coupon_user` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '记录ID',
+  `user_id` bigint(20) NOT NULL COMMENT '用户ID',
+  `coupon_id` bigint(20) NOT NULL COMMENT '优惠券ID',
+  `coupon_code` varchar(50) NOT NULL COMMENT '优惠券编码',
+  `coupon_type` tinyint(4) NOT NULL COMMENT '优惠券类型（冗余字段）',
+  `status` tinyint(4) NOT NULL DEFAULT 1 COMMENT '状态：1-未使用，2-已使用，3-已过期，4-已锁定（下单中）',
+  `source` tinyint(4) DEFAULT 1 COMMENT '领取来源：1-主动领取，2-系统发放，3-活动赠送',
+  `receive_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '领取时间',
+  `valid_start_time` datetime NOT NULL COMMENT '有效开始时间',
+  `valid_end_time` datetime NOT NULL COMMENT '有效结束时间',
+  `use_time` datetime DEFAULT NULL COMMENT '使用时间',
+  `order_id` varchar(50) DEFAULT NULL COMMENT '使用的订单ID',
+  `use_platform` tinyint(4) DEFAULT NULL COMMENT '使用平台：1-PC，2-APP，3-小程序',
+  `is_seckill` tinyint(1) DEFAULT 0 COMMENT '是否秒杀领取',
+  `seckill_order_no` varchar(50) DEFAULT NULL COMMENT '秒杀订单号',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_user_coupon` (`user_id`,`coupon_id`) COMMENT '用户优惠券唯一',
+  KEY `idx_user_status` (`user_id`,`status`),
+  KEY `idx_coupon_status` (`coupon_id`,`status`),
+  KEY `idx_valid_time` (`valid_end_time`,`status`),
+  KEY `idx_seckill_order` (`seckill_order_no`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户优惠券领取记录表';
+```
+
+
+
+### 1.4 优惠券使用范围表 `coupon_scope`
+
+sql
+
+```sql
+CREATE TABLE `coupon_scope` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `coupon_id` bigint(20) NOT NULL COMMENT '优惠券ID',
+  `scope_type` tinyint(4) NOT NULL COMMENT '范围类型：1-商品分类，2-商品，3-品牌，4-店铺',
+  `scope_id` bigint(20) NOT NULL COMMENT '范围ID（商品ID、分类ID等）',
+  `scope_name` varchar(100) DEFAULT NULL COMMENT '范围名称（冗余）',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_coupon_scope` (`coupon_id`,`scope_type`),
+  KEY `idx_scope` (`scope_type`,`scope_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='优惠券适用范围表';
+```
+
+
+
+### 1.5 秒杀活动参与记录表 `seckill_participant`
+
+sql
+
+```sql
+CREATE TABLE `seckill_participant` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `seckill_id` bigint(20) NOT NULL COMMENT '秒杀活动ID（对应coupon_id）',
+  `user_id` bigint(20) NOT NULL COMMENT '用户ID',
+  `session_id` varchar(100) DEFAULT NULL COMMENT '会话ID（用于防刷）',
+  `ip_address` varchar(50) DEFAULT NULL COMMENT 'IP地址',
+  `user_agent` varchar(500) DEFAULT NULL COMMENT '用户代理',
+  `participate_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '参与时间',
+  `result` tinyint(4) DEFAULT NULL COMMENT '参与结果：1-成功，2-失败，3-排队中',
+  `queue_number` int(11) DEFAULT NULL COMMENT '排队号',
+  `queue_start_time` datetime DEFAULT NULL COMMENT '排队开始时间',
+  `queue_end_time` datetime DEFAULT NULL COMMENT '排队结束时间',
+  `error_reason` varchar(200) DEFAULT NULL COMMENT '失败原因',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_user_seckill` (`user_id`,`seckill_id`) COMMENT '用户秒杀活动唯一',
+  KEY `idx_seckill_result` (`seckill_id`,`result`),
+  KEY `idx_participate_time` (`participate_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='秒杀活动参与记录表';
+```
+
+
+
+### 1.6 优惠券库存流水表 `coupon_stock_flow`
+
+sql
+
+```sql
+CREATE TABLE `coupon_stock_flow` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `coupon_id` bigint(20) NOT NULL COMMENT '优惠券ID',
+  `flow_type` tinyint(4) NOT NULL COMMENT '流水类型：1-发放，2-领取，3-核销，4-回退，5-作废',
+  `change_quantity` int(11) NOT NULL COMMENT '变更数量（正数为增加，负数为减少）',
+  `before_quantity` int(11) NOT NULL COMMENT '变更前数量',
+  `after_quantity` int(11) NOT NULL COMMENT '变更后数量',
+  `user_id` bigint(20) DEFAULT NULL COMMENT '操作用户ID',
+  `order_id` varchar(50) DEFAULT NULL COMMENT '关联订单ID',
+  `remark` varchar(200) DEFAULT NULL COMMENT '备注',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_coupon_flow` (`coupon_id`,`flow_type`),
+  KEY `idx_create_time` (`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='优惠券库存流水表';
+```
+
+我来帮您完善这个秒杀下单的完整实现，解决超卖和一人一单问题。
+
+## 🛠️ 完整完善版本
+
+### 1. 数据库表结构
+
+```sql
+-- 秒杀优惠券表
+CREATE TABLE `seckill_voucher` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `voucher_id` bigint(20) NOT NULL COMMENT '关联的优惠券id',
+  `title` varchar(255) NOT NULL COMMENT '标题',
+  `stock` int(11) NOT NULL COMMENT '库存',
+  `begin_time` datetime NOT NULL COMMENT '开始时间',
+  `end_time` datetime NOT NULL COMMENT '结束时间',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_voucher_id` (`voucher_id`),
+  KEY `idx_time` (`begin_time`,`end_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='秒杀优惠券表';
+
+-- 优惠券订单表
+CREATE TABLE `voucher_order` (
+  `id` bigint(20) NOT NULL COMMENT '订单id',
+  `user_id` bigint(20) NOT NULL COMMENT '下单的用户id',
+  `voucher_id` bigint(20) NOT NULL COMMENT '购买的代金券id',
+  `pay_type` tinyint(1) DEFAULT '1' COMMENT '支付方式 1：余额支付；2：支付宝；3：微信',
+  `status` tinyint(1) DEFAULT '1' COMMENT '订单状态，1：未支付；2：已支付；3：已核销；4：已取消',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '下单时间',
+  `pay_time` datetime DEFAULT NULL COMMENT '支付时间',
+  `use_time` datetime DEFAULT NULL COMMENT '核销时间',
+  `refund_time` datetime DEFAULT NULL COMMENT '退款时间',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `idx_user_voucher` (`user_id`,`voucher_id`) COMMENT '防止用户重复购买',
+  KEY `idx_user_id` (`user_id`),
+  KEY `idx_voucher_id` (`voucher_id`),
+  KEY `idx_create_time` (`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='优惠券订单表';
+```
+
+### 2. 实体类
+
+```java
+// SeckillVoucher.java
+@Data
+@TableName("seckill_voucher")
+public class SeckillVoucher {
+    private Long id;
+    private Long voucherId;
+    private String title;
+    private Integer stock;
+    private LocalDateTime beginTime;
+    private LocalDateTime endTime;
+    private LocalDateTime createTime;
+    private LocalDateTime updateTime;
+}
+
+// VoucherOrder.java
+@Data
+@TableName("voucher_order")
+public class VoucherOrder {
+    @TableId(type = IdType.INPUT)  // 手动输入ID
+    private Long id;
+    private Long userId;
+    private Long voucherId;
+    private Integer payType;
+    private Integer status;  // 1-未支付 2-已支付 3-已核销 4-已取消
+    private LocalDateTime createTime;
+    private LocalDateTime payTime;
+    private LocalDateTime useTime;
+    private LocalDateTime refundTime;
+    private LocalDateTime updateTime;
+}
+```
+
+### 3. 完善后的Service层
+
+```java
+@Service
+@Slf4j
+public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, VoucherOrder> 
+    implements IVoucherOrderService {
+
+    @Resource
+    private ISeckillVoucherService seckillVoucherService;
+    
+    @Resource
+    private RedisIdWorker redisIdWorker;
+    
+    @Resource
+    private StringRedisTemplate stringRedisTemplate;  // 用于分布式锁
+
+    /**
+     * 秒杀下单 - 完整版本（解决超卖和一人一单）
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Result seckillVoucher(Long voucherId) {
+        // 1. 查询优惠券信息
+        SeckillVoucher voucher = seckillVoucherService.getById(voucherId);
+        if (voucher == null) {
+            return Result.fail("优惠券不存在");
+        }
+        
+        // 2. 判断秒杀是否开始
+        LocalDateTime now = LocalDateTime.now();
+        if (now.isBefore(voucher.getBeginTime())) {
+            return Result.fail("秒杀尚未开始！开始时间：" + voucher.getBeginTime());
+        }
+        
+        // 3. 判断秒杀是否已经结束
+        if (now.isAfter(voucher.getEndTime())) {
+            return Result.fail("秒杀已经结束！结束时间：" + voucher.getEndTime());
+        }
+        
+        // 4. 判断库存是否充足
+        if (voucher.getStock() < 1) {
+            return Result.fail("库存不足");
+        }
+        
+        // 5. 一人一单校验（获取当前用户）
+        Long userId = UserHolder.getUser().getId();
+        
+        // 方法一：使用synchronized锁（单机版）
+        // synchronized (userId.toString().intern()) {
+        //     return createVoucherOrder(userId, voucherId, voucher);
+        // }
+        
+        // 方法二：使用分布式锁（集群版）
+        String lockKey = "order:" + userId + ":" + voucherId;
+        RLock lock = null;
+        try {
+            // 尝试获取锁，最多等待5秒，锁过期时间10秒
+            lock = redissonClient.getLock(lockKey);
+            boolean isLock = lock.tryLock(5, 10, TimeUnit.SECONDS);
+            
+            if (!isLock) {
+                return Result.fail("请勿重复操作");
+            }
+            
+            // 执行下单逻辑
+            return createVoucherOrder(userId, voucherId, voucher);
+            
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return Result.fail("系统繁忙，请稍后再试");
+        } finally {
+            if (lock != null && lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+        }
+    }
+    
+    /**
+     * 创建订单的核心方法（加锁后执行）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Result createVoucherOrder(Long userId, Long voucherId, SeckillVoucher voucher) {
+        // 1. 再次校验一人一单（防止并发问题）
+        int count = query().eq("user_id", userId)
+                          .eq("voucher_id", voucherId)
+                          .count();
+        if (count > 0) {
+            return Result.fail("您已经购买过此优惠券！");
+        }
+        
+        // 2. 扣减库存（使用乐观锁解决超卖问题）
+        boolean success = seckillVoucherService.update()
+                .setSql("stock = stock - 1")
+                .eq("voucher_id", voucherId)
+                .gt("stock", 0)  // 乐观锁：库存必须大于0
+                // 或者使用版本号乐观锁：
+                // .eq("version", voucher.getVersion())
+                // .set("version", voucher.getVersion() + 1)
+                .update();
+        
+        if (!success) {
+            // 扣减失败，可能是库存不足或已被其他用户抢购
+            return Result.fail("库存不足，抢购失败！");
+        }
+        
+        // 3. 创建订单
+        VoucherOrder voucherOrder = new VoucherOrder();
+        
+        // 生成分布式ID
+        long orderId = redisIdWorker.nextId("order");
+        voucherOrder.setId(orderId);
+        voucherOrder.setUserId(userId);
+        voucherOrder.setVoucherId(voucherId);
+        voucherOrder.setStatus(1);  // 未支付
+        voucherOrder.setCreateTime(LocalDateTime.now());
+        
+        // 4. 保存订单
+        boolean saved = save(voucherOrder);
+        if (!saved) {
+            throw new RuntimeException("创建订单失败");
+        }
+        
+        // 5. 记录日志（可选）
+        log.info("用户 {} 成功抢购优惠券 {}，订单号：{}", userId, voucherId, orderId);
+        
+        // 6. 返回订单ID
+        return Result.ok(orderId);
+    }
+    
+    /**
+     * 方法三：使用数据库唯一索引防止一人一单（最简单可靠）
+     * 在voucher_order表创建唯一索引：UNIQUE KEY `uk_user_voucher` (`user_id`,`voucher_id`)
+     * 然后直接创建订单，让数据库抛出异常
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Result seckillVoucherSimple(Long voucherId) {
+        // ... 前面校验逻辑相同 ...
+        
+        Long userId = UserHolder.getUser().getId();
+        
+        try {
+            // 1. 扣减库存
+            boolean success = seckillVoucherService.update()
+                    .setSql("stock = stock - 1")
+                    .eq("voucher_id", voucherId)
+                    .gt("stock", 0)
+                    .update();
+            
+            if (!success) {
+                return Result.fail("库存不足");
+            }
+            
+            // 2. 创建订单（依赖数据库唯一索引防止重复）
+            VoucherOrder voucherOrder = new VoucherOrder();
+            voucherOrder.setId(redisIdWorker.nextId("order"));
+            voucherOrder.setUserId(userId);
+            voucherOrder.setVoucherId(voucherId);
+            voucherOrder.setStatus(1);
+            voucherOrder.setCreateTime(LocalDateTime.now());
+            
+            save(voucherOrder);
+            
+            return Result.ok(voucherOrder.getId());
+            
+        } catch (DuplicateKeyException e) {
+            // 捕获唯一索引冲突异常
+            log.warn("用户重复购买，userId: {}, voucherId: {}", userId, voucherId);
+            return Result.fail("您已经购买过此优惠券");
+        } catch (Exception e) {
+            log.error("下单异常", e);
+            throw e;
+        }
+    }
+}
+```
+
+### 4. 工具类：UserHolder（获取当前用户）
+
+```java
+@Component
+public class UserHolder {
+    private static final ThreadLocal<UserDTO> tl = new ThreadLocal<>();
+    
+    public static void saveUser(UserDTO user) {
+        tl.set(user);
+    }
+    
+    public static UserDTO getUser() {
+        return tl.get();
+    }
+    
+    public static Long getUserId() {
+        UserDTO user = getUser();
+        return user != null ? user.getId() : null;
+    }
+    
+    public static void removeUser() {
+        tl.remove();
+    }
+    
+    @Data
+    public static class UserDTO {
+        private Long id;
+        private String username;
+        private String phone;
+        // 其他用户信息...
+    }
+}
+```
+
+### 5. 拦截器（从Token获取用户）
+
+```java
+@Slf4j
+@Component
+public class LoginInterceptor implements HandlerInterceptor {
+    
+    @Override
+    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+        // 1. 从请求头获取token
+        String token = request.getHeader("Authorization");
+        if (StringUtils.isBlank(token)) {
+            throw new BusinessException(401, "未登录");
+        }
+        
+        // 2. 解析token获取用户信息
+        UserDTO userDTO = parseToken(token);
+        if (userDTO == null) {
+            throw new BusinessException(401, "登录已过期");
+        }
+        
+        // 3. 保存用户信息到ThreadLocal
+        UserHolder.saveUser(userDTO);
+        return true;
+    }
+    
+    @Override
+    public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) throws Exception {
+        // 移除用户信息，防止内存泄漏
+        UserHolder.removeUser();
+    }
+    
+    private UserDTO parseToken(String token) {
+        // 解析JWT token的实现
+        // 这里简化处理，实际应该验证token签名和过期时间
+        try {
+            // 示例：假设token是userId
+            Long userId = Long.parseLong(token);
+            UserDTO userDTO = new UserDTO();
+            userDTO.setId(userId);
+            // 可以从数据库查询用户信息
+            return userDTO;
+        } catch (Exception e) {
+            log.error("解析token失败", e);
+            return null;
+        }
+    }
+}
+```
+
+### 6. 全局异常处理
+
+```java
+@RestControllerAdvice
+@Slf4j
+public class GlobalExceptionHandler {
+    
+    /**
+     * 业务异常处理
+     */
+    @ExceptionHandler(BusinessException.class)
+    public Result handleBusinessException(BusinessException e) {
+        log.warn("业务异常: {}", e.getMessage());
+        return Result.fail(e.getMessage());
+    }
+    
+    /**
+     * 唯一键冲突异常（一人一单）
+     */
+    @ExceptionHandler(DuplicateKeyException.class)
+    public Result handleDuplicateKeyException(DuplicateKeyException e) {
+        log.warn("数据重复: {}", e.getMessage());
+        return Result.fail("请勿重复操作");
+    }
+    
+    /**
+     * 乐观锁异常
+     */
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public Result handleOptimisticLockException(OptimisticLockingFailureException e) {
+        log.warn("并发冲突: {}", e.getMessage());
+        return Result.fail("抢购过于火爆，请稍后重试");
+    }
+    
+    /**
+     * 全局异常处理
+     */
+    @ExceptionHandler(Exception.class)
+    public Result handleException(Exception e) {
+        log.error("系统异常", e);
+        return Result.fail("系统繁忙，请稍后再试");
+    }
+}
+
+// 自定义业务异常
+@Data
+@EqualsAndHashCode(callSuper = true)
+public class BusinessException extends RuntimeException {
+    private Integer code;
+    
+    public BusinessException(Integer code, String message) {
+        super(message);
+        this.code = code;
+    }
+}
+```
+
+### 7. Result统一返回格式
+
+```java
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class Result {
+    private Boolean success;
+    private String message;
+    private Object data;
+    
+    public static Result ok() {
+        return new Result(true, null, null);
+    }
+    
+    public static Result ok(Object data) {
+        return new Result(true, null, data);
+    }
+    
+    public static Result fail(String message) {
+        return new Result(false, message, null);
+    }
+    
+    public static Result fail(String message, Object data) {
+        return new Result(false, message, data);
+    }
+}
+```
+
+### 8. 优化建议：使用Redis预减库存
+
+```java
+@Service
+@Slf4j
+public class SeckillServiceV2 {
+    
+    @Resource
+    private StringRedisTemplate stringRedisTemplate;
+    
+    // 秒杀活动开始前，将库存加载到Redis
+    public void loadStockToRedis(Long voucherId) {
+        SeckillVoucher voucher = seckillVoucherService.getById(voucherId);
+        String key = "seckill:stock:" + voucherId;
+        stringRedisTemplate.opsForValue().set(key, voucher.getStock().toString());
+    }
+    
+    /**
+     * 秒杀流程优化：
+     * 1. Redis预减库存（快速失败）
+     * 2. 消息队列异步下单
+     */
+    public Result seckillVoucherWithRedis(Long voucherId) {
+        Long userId = UserHolder.getUserId();
+        
+        // 1. 资格校验（一人一单）
+        String userOrderKey = "seckill:user:" + voucherId + ":" + userId;
+        Boolean isFirst = stringRedisTemplate.opsForValue().setIfAbsent(userOrderKey, "1", 24, TimeUnit.HOURS);
+        if (Boolean.FALSE.equals(isFirst)) {
+            return Result.fail("您已经参与过此活动");
+        }
+        
+        // 2. Redis预减库存
+        String stockKey = "seckill:stock:" + voucherId;
+        Long stock = stringRedisTemplate.opsForValue().decrement(stockKey);
+        if (stock == null || stock < 0) {
+            // 库存不足，恢复用户的购买资格
+            stringRedisTemplate.delete(userOrderKey);
+            return Result.fail("库存不足");
+        }
+        
+        // 3. 发送消息到队列异步下单
+        VoucherOrderMessage message = new VoucherOrderMessage();
+        message.setUserId(userId);
+        message.setVoucherId(voucherId);
+        message.setOrderId(redisIdWorker.nextId("order"));
+        
+        // 发送到RabbitMQ或Kafka
+        // rabbitTemplate.convertAndSend("seckill.exchange", "seckill.order", message);
+        
+        // 4. 立即返回排队中
+        return Result.ok("抢购成功，正在生成订单...");
+    }
+    
+    /**
+     * 消息队列消费者：异步处理订单
+     */
+    @RabbitListener(queues = "seckill.order.queue")
+    public void handleSeckillOrder(VoucherOrderMessage message) {
+        try {
+            // 异步下单，这里可以慢慢处理数据库操作
+            createVoucherOrder(message.getUserId(), message.getVoucherId(), message.getOrderId());
+        } catch (Exception e) {
+            log.error("处理秒杀订单失败", e);
+            // 失败后需要恢复Redis中的库存
+            stringRedisTemplate.opsForValue().increment("seckill:stock:" + message.getVoucherId());
+            // 移除用户限制
+            stringRedisTemplate.delete("seckill:user:" + message.getVoucherId() + ":" + message.getUserId());
+        }
+    }
+}
+```
+
+## 🎯 总结解决方案
+
+### 超卖问题解决方案（优先级）：
+1. **乐观锁**（推荐）：`UPDATE ... SET stock = stock - 1 WHERE stock > 0`
+2. **Redis原子操作**：预减库存，快速失败
+3. **悲观锁**：在极端高并发下使用，但性能较差
+
+### 一人一单解决方案（优先级）：
+1. **数据库唯一索引**（最简单可靠）：创建`(user_id, voucher_id)`唯一索引
+2. **Redis setnx**：快速校验，配合数据库唯一索引
+3. **分布式锁**：复杂场景使用，如Redisson
+
+### 完整流程建议：
+1. **请求入口**：校验用户登录状态
+2. **资格校验**：时间、库存、用户是否已购买
+3. **库存扣减**：Redis预减库存（快速）
+4. **订单创建**：消息队列异步处理
+5. **返回结果**：立即返回，异步通知
+
+这样设计既保证了系统的**高并发性能**，又确保了**数据的一致性**。
